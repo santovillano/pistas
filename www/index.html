@@ -149,8 +149,9 @@
     f.connect(gan).connect(ctx.destination);
     // Si el sistema corta la pista mientras el play sigue activo, se vuelve a lanzar en el mismo punto del bucle
     f.onended = () => {
-      if (reproduciendo && t.nodo && t.nodo.f === f && masterLen) {
-        const pos = (((ctx.currentTime - t0) % masterLen) + masterLen) % masterLen;
+      if (reproduciendo && t.nodo && t.nodo.f === f) {
+        const dur = t.buffer.duration;
+        const pos = (((ctx.currentTime - t0) % dur) + dur) % dur;
         lanzar(i, 0, pos);
       }
     };
@@ -160,6 +161,9 @@
   function detener(i) {
     const t = pistas[i];
     if (t.nodo) { try { t.nodo.f.stop(); } catch(e){} t.nodo = null; }
+  }
+  function calcularLargo() {   // largo total = la pista más larga
+    masterLen = pistas.reduce((m, p) => p.buffer ? Math.max(m, p.buffer.duration) : m, 0);
   }
   function lanzarTodas(excepto = -1) {
     t0 = ctx.currentTime + 0.05;
@@ -222,7 +226,6 @@
     grabandoIdx = i;
     refrescar();
     msg('Grabando pista ' + (i+1) + '… toca otra vez para detener');
-    if (masterLen) temporizador = setTimeout(() => pararGrabacion(false), masterLen * 1000);
   }
 
   function pararGrabacion(cancelar) {
@@ -240,16 +243,14 @@
       const blob = new Blob(trozos, { type: grabador.mimeType });
       let buf = await ctx.decodeAudioData(await blob.arrayBuffer());
       const corte = Math.min(Math.floor(LATENCIA * buf.sampleRate), buf.length - 1);
-      let largo = buf.length - corte;
-      if (masterLen) largo = Math.min(largo, Math.floor(masterLen * buf.sampleRate));
-      const total = masterLen ? Math.floor(masterLen * buf.sampleRate) : largo;   // si es más corta, se rellena con silencio
-      const nuevo = ctx.createBuffer(buf.numberOfChannels, total, buf.sampleRate);
+      const largo = buf.length - corte;     // cada pista dura lo que dure su grabación
+      const nuevo = ctx.createBuffer(buf.numberOfChannels, largo, buf.sampleRate);
       for (let c = 0; c < buf.numberOfChannels; c++)
         nuevo.copyToChannel(buf.getChannelData(c).subarray(corte, corte + largo), c);
       pistas[i].buffer = nuevo; pistas[i].mute = false;
       orden.push(i);
-      if (!masterLen) masterLen = nuevo.duration;   // la primera grabación define el largo
-      msg('Pista ' + (i+1) + ' guardada (' + nuevo.duration.toFixed(1) + ' s)');
+      calcularLargo();                      // el largo total lo define la pista más larga
+      msg('Pista ' + (i+1) + ' guardada (' + nuevo.duration.toFixed(1) + ' s). Largo total: ' + masterLen.toFixed(1) + ' s');
     } catch (e) { msg('Error al procesar la grabación'); }
     refrescar(); recalcularOnda();
   }
@@ -260,7 +261,8 @@
     if (!orden.length) { msg('No hay nada que rehacer'); return; }
     const i = orden.pop();
     detener(i); pistas[i].buffer = null; pistas[i].mute = false;
-    if (!orden.length) { masterLen = 0; reproduciendo = false; mantenerEncendida(false); }
+    calcularLargo();
+    if (!orden.length) { reproduciendo = false; mantenerEncendida(false); }
     refrescar(); recalcularOnda();
     msg('Pista ' + (i+1) + ' borrada. Toca el número para grabarla de nuevo');
   });
@@ -275,7 +277,10 @@
       audioCtx();
       const sr = ctx.sampleRate, largo = Math.round(masterLen * sr);
       const off = new OfflineAudioContext(2, largo, sr);
-      activas.forEach(p => { const s = off.createBufferSource(); s.buffer = p.buffer; s.connect(off.destination); s.start(0); });
+      activas.forEach(p => {   // las pistas más cortas se repiten hasta completar el largo total
+        const s = off.createBufferSource(); s.buffer = p.buffer; s.loop = true; s.loopEnd = p.buffer.duration;
+        s.connect(off.destination); s.start(0);
+      });
       const mezcla = await off.startRendering();
       let pico = 0;
       for (let c = 0; c < 2; c++) { const d = mezcla.getChannelData(c); for (let k = 0; k < d.length; k++) { const a = Math.abs(d[k]); if (a > pico) pico = a; } }
@@ -345,12 +350,16 @@
     const r = window.devicePixelRatio || 1;
     nBarras = Math.max(8, Math.floor(cv.width / ((ANCHO_BARRA + SEPARACION) * r)));
     picos = new Array(nBarras).fill(0);
+    if (!masterLen) return;
     pistas.forEach(p => {
       if (!p.buffer || p.mute) return;
-      const d = p.buffer.getChannelData(0), paso = d.length / nBarras;
+      // cada pista se dibuja repetida a lo largo del largo total (la más larga define el ancho)
+      const d = p.buffer.getChannelData(0), sr = p.buffer.sampleRate, dur = p.buffer.duration;
       for (let x = 0; x < nBarras; x++) {
-        let m = 0; const a = Math.floor(x * paso), b = Math.min(d.length, Math.floor((x + 1) * paso));
-        for (let k = a; k < b; k += 16) { const v = Math.abs(d[k]); if (v > m) m = v; }
+        const ini = x / nBarras * masterLen, fin = (x + 1) / nBarras * masterLen;
+        const desde = Math.floor(((ini % dur)) * sr), cuantas = Math.max(1, Math.floor((fin - ini) * sr));
+        let m = 0;
+        for (let k = 0; k < cuantas; k += 16) { const v = Math.abs(d[(desde + k) % d.length]); if (v > m) m = v; }
         picos[x] += m;
       }
     });
@@ -395,8 +404,8 @@
       g.shadowBlur = 0;
     }
     // reloj
-    if (masterLen && activo) tiempo.textContent = (pos * masterLen).toFixed(1) + ' / ' + masterLen.toFixed(1) + ' s';
-    else if (grabandoIdx >= 0 && !masterLen) tiempo.textContent = Math.max(0, ctx.currentTime - t0).toFixed(1) + ' s';
+    if (grabandoIdx >= 0) tiempo.textContent = Math.max(0, ctx.currentTime - t0).toFixed(1) + ' s';
+    else if (masterLen && activo) tiempo.textContent = (pos * masterLen).toFixed(1) + ' / ' + masterLen.toFixed(1) + ' s';
     else tiempo.textContent = masterLen ? masterLen.toFixed(1) + ' s' : '0.0 s';
     requestAnimationFrame(dibujar);
   }
