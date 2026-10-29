@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#ffffff">
+<title>Pistas</title>
+<style>
+  :root { --borde:#222; --rec:#ff0000; --ok:#c9f2c7; --mute:#e4e4e4; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; }
+  html,body { margin:0; height:100%; background:#fff; font-family:system-ui,Arial,sans-serif; }
+  body { display:flex; flex-direction:column; padding:8px; gap:8px; }
+
+  /* barra superior: play + pista de audio */
+  #bar { display:flex; gap:10px; align-items:stretch; height:64px; flex:none; }
+  #play { width:56px; border:0; background:none; padding:0; display:flex; align-items:center; justify-content:center; }
+  #play svg { width:44px; height:44px; fill:#fff; stroke:var(--borde); stroke-width:4; stroke-linejoin:round; }
+  #onda { flex:1; border:3px solid var(--borde); position:relative; min-width:0; }
+  #onda canvas { position:absolute; inset:0; width:100%; height:100%; }
+  #onda span { position:absolute; top:2px; left:0; right:0; text-align:center; font-size:13px; pointer-events:none; }
+  #estado { font-size:12px; text-align:center; min-height:16px; flex:none; color:#333; }
+
+  /* grilla */
+  #marco { flex:1; border:3px solid var(--borde); padding:3vw; display:grid;
+           grid-template-columns:repeat(5,1fr); grid-template-rows:repeat(3,1fr); gap:3vw; min-height:0; }
+  .pad { border:3px solid var(--borde); background:#fff; font-size:clamp(11px,3.4vw,24px);
+         display:flex; align-items:center; justify-content:center; text-align:center; padding:2px; touch-action:manipulation; }
+  .pad.lleno { background:var(--ok); }
+  .pad.mute { background:var(--mute); color:#888; text-decoration:line-through; }
+  .pad.grabando { background:#ffd0d0; animation:parp .8s infinite; font-weight:bold; }
+  #bajar { background:var(--rec); font-size:clamp(11px,3vw,22px); }
+  @keyframes parp { 50% { background:#ff8a8a; } }
+  @media (orientation:portrait) { #marco { grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(5,1fr); } }
+</style>
+</head>
+<body>
+<div id="bar">
+  <button id="play" aria-label="Reproducir">
+    <svg viewBox="0 0 48 48"><polygon id="ico" points="10,6 10,42 42,24"/></svg>
+  </button>
+  <div id="onda"><canvas id="cv"></canvas><span>pista de audio</span></div>
+</div>
+<div id="estado">Toca un «sonido» para grabar; toca otra vez para detener</div>
+<div id="marco"></div>
+
+<script>
+(() => {
+  const N = 13;
+  const LATENCIA = 0.10;   // segundos recortados al inicio para compensar el retardo del micrófono
+
+  const marco = document.getElementById('marco');
+  const estado = document.getElementById('estado');
+  const btnPlay = document.getElementById('play');
+  const ico = document.getElementById('ico');
+  const cv = document.getElementById('cv');
+  const g = cv.getContext('2d');
+
+  const pistas = Array.from({length:N}, () => ({buffer:null, mute:false, nodo:null}));
+  const orden = [];            // orden en que se grabaron las pistas (para «volver a realizar»)
+  let masterLen = 0;           // largo del bucle: lo define la primera grabación
+  let ctx, stream, analizador, grabador, trozos = [], temporizador;
+  let grabandoIdx = -1, reproduciendo = false, descartar = false, t0 = 0;
+  let picos = [];
+
+  // ---------- interfaz ----------
+  const pads = [];
+  for (let i = 0; i < N; i++) {
+    const b = document.createElement('button');
+    b.className = 'pad'; b.textContent = 'sonido';
+    b.addEventListener('click', () => tocarPad(i));
+    marco.appendChild(b); pads.push(b);
+  }
+  const redo = document.createElement('button');
+  redo.className = 'pad'; redo.textContent = 'volver a realizar';
+  marco.appendChild(redo);
+  const bajar = document.createElement('button');
+  bajar.className = 'pad'; bajar.id = 'bajar'; bajar.textContent = 'descargar';
+  marco.appendChild(bajar);
+
+  function msg(t) { estado.textContent = t; }
+  function refrescar() {
+    pads.forEach((p, i) => {
+      const t = pistas[i];
+      p.classList.toggle('lleno', !!t.buffer);
+      p.classList.toggle('mute', t.mute);
+      p.classList.toggle('grabando', i === grabandoIdx);
+      p.textContent = i === grabandoIdx ? '● grabando' : (t.buffer ? 'sonido ' + (i+1) : 'sonido');
+    });
+    ico.setAttribute('points', reproduciendo ? '8,8 8,40 40,40 40,8' : '10,6 10,42 42,24');
+  }
+
+  // ---------- audio ----------
+  function audioCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  async function pedirMicro() {
+    if (stream) return;
+    stream = await navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false } });
+    analizador = ctx.createAnalyser(); analizador.fftSize = 1024;
+    ctx.createMediaStreamSource(stream).connect(analizador);   // solo para dibujar la onda en vivo
+  }
+
+  function lanzar(i, cuando) {
+    const t = pistas[i];
+    if (!t.buffer) return;
+    detener(i);
+    const f = ctx.createBufferSource(), gan = ctx.createGain();
+    f.buffer = t.buffer; f.loop = true; f.loopEnd = t.buffer.duration;
+    gan.gain.value = t.mute ? 0 : 1;
+    f.connect(gan).connect(ctx.destination);
+    f.start(cuando);
+    t.nodo = { f, gan };
+  }
+  function detener(i) {
+    const t = pistas[i];
+    if (t.nodo) { try { t.nodo.f.stop(); } catch(e){} t.nodo = null; }
+  }
+  function lanzarTodas(excepto = -1) {
+    t0 = ctx.currentTime + 0.05;
+    pistas.forEach((p, i) => { if (i !== excepto && p.buffer) lanzar(i, t0); });
+  }
+  function detenerTodas() { pistas.forEach((_, i) => detener(i)); }
+
+  // ---------- botón play ----------
+  btnPlay.addEventListener('click', () => {
+    if (grabandoIdx >= 0) return;
+    audioCtx();
+    if (reproduciendo) { detenerTodas(); reproduciendo = false; msg('Detenido'); }
+    else if (!orden.length) { msg('Aún no hay pistas grabadas'); return; }
+    else { lanzarTodas(); reproduciendo = true; msg('Reproduciendo todas las pistas'); }
+    refrescar();
+  });
+
+  // ---------- pads: un toque graba, otro toque detiene ----------
+  function tocarPad(i) {
+    if (grabandoIdx >= 0) {
+      if (i === grabandoIdx) pararGrabacion(false);
+      else msg('Detén primero la grabación en curso');
+      return;
+    }
+    if (pistas[i].buffer) {            // pista ya grabada: silenciar / activar
+      pistas[i].mute = !pistas[i].mute;
+      if (pistas[i].nodo) pistas[i].nodo.gan.gain.value = pistas[i].mute ? 0 : 1;
+      msg('Pista ' + (i+1) + (pistas[i].mute ? ' silenciada' : ' activada'));
+      refrescar(); recalcularOnda();
+    } else iniciarGrabacion(i);
+  }
+
+  async function iniciarGrabacion(i) {
+    try { audioCtx(); await pedirMicro(); }
+    catch (e) { msg('No se pudo acceder al micrófono. Revisa el permiso.'); return; }
+    detenerTodas(); reproduciendo = false;
+    trozos = []; descartar = false;
+    grabador = new MediaRecorder(stream);
+    grabador.ondataavailable = e => { if (e.data.size) trozos.push(e.data); };
+    grabador.onstop = () => guardarGrabacion(i);
+    lanzarTodas(i);                    // se oyen las demás pistas mientras grabas
+    grabador.start();
+    grabandoIdx = i;
+    refrescar();
+    msg('Grabando pista ' + (i+1) + '… toca otra vez para detener');
+    if (masterLen) temporizador = setTimeout(() => pararGrabacion(false), masterLen * 1000);
+  }
+
+  function pararGrabacion(cancelar) {
+    if (grabandoIdx < 0) return;
+    clearTimeout(temporizador);
+    descartar = !!cancelar;
+    try { grabador.stop(); } catch(e){}
+    detenerTodas();
+  }
+
+  async function guardarGrabacion(i) {
+    grabandoIdx = -1;
+    if (descartar) { refrescar(); msg('Grabación descartada'); return; }
+    try {
+      const blob = new Blob(trozos, { type: grabador.mimeType });
+      let buf = await ctx.decodeAudioData(await blob.arrayBuffer());
+      const corte = Math.min(Math.floor(LATENCIA * buf.sampleRate), buf.length - 1);
+      let largo = buf.length - corte;
+      if (masterLen) largo = Math.min(largo, Math.floor(masterLen * buf.sampleRate));
+      const total = masterLen ? Math.floor(masterLen * buf.sampleRate) : largo;   // si es más corta, se rellena con silencio
+      const nuevo = ctx.createBuffer(buf.numberOfChannels, total, buf.sampleRate);
+      for (let c = 0; c < buf.numberOfChannels; c++)
+        nuevo.copyToChannel(buf.getChannelData(c).subarray(corte, corte + largo), c);
+      pistas[i].buffer = nuevo; pistas[i].mute = false;
+      orden.push(i);
+      if (!masterLen) masterLen = nuevo.duration;   // la primera grabación define el largo
+      msg('Pista ' + (i+1) + ' guardada (' + nuevo.duration.toFixed(1) + ' s)');
+    } catch (e) { msg('Error al procesar la grabación'); }
+    refrescar(); recalcularOnda();
+  }
+
+  // ---------- volver a realizar: borra la última pista grabada ----------
+  redo.addEventListener('click', () => {
+    if (grabandoIdx >= 0) { pararGrabacion(true); return; }
+    if (!orden.length) { msg('No hay nada que rehacer'); return; }
+    const i = orden.pop();
+    detener(i); pistas[i].buffer = null; pistas[i].mute = false;
+    if (!orden.length) { masterLen = 0; reproduciendo = false; }
+    refrescar(); recalcularOnda();
+    msg('Pista ' + (i+1) + ' borrada. Toca «sonido» para grabarla de nuevo');
+  });
+
+  // ---------- descargar la mezcla final ----------
+  bajar.addEventListener('click', async () => {
+    if (grabandoIdx >= 0) { msg('Detén la grabación antes de descargar'); return; }
+    const activas = pistas.filter(p => p.buffer && !p.mute);
+    if (!activas.length) { msg('No hay pistas activas para mezclar'); return; }
+    msg('Mezclando…');
+    try {
+      audioCtx();
+      const sr = ctx.sampleRate, largo = Math.round(masterLen * sr);
+      const off = new OfflineAudioContext(2, largo, sr);
+      activas.forEach(p => { const s = off.createBufferSource(); s.buffer = p.buffer; s.connect(off.destination); s.start(0); });
+      const mezcla = await off.startRendering();
+      // normaliza si se pasa de volumen
+      let pico = 0;
+      for (let c = 0; c < 2; c++) { const d = mezcla.getChannelData(c); for (let k = 0; k < d.length; k++) { const a = Math.abs(d[k]); if (a > pico) pico = a; } }
+      const ganancia = pico > 0.98 ? 0.98 / pico : 1;
+      const wav = aWav(mezcla, ganancia);
+      const d = new Date(), z = n => String(n).padStart(2, '0');
+      const nombre = `mezcla-${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}.wav`;
+      await guardarArchivo(wav, nombre);
+    } catch (e) { msg('No se pudo crear la mezcla'); }
+  });
+
+  function aWav(buf, gan) {
+    const canales = 2, n = buf.length, sr = buf.sampleRate, bytes = n * canales * 2;
+    const ab = new ArrayBuffer(44 + bytes), v = new DataView(ab);
+    const txt = (o, s) => { for (let k = 0; k < s.length; k++) v.setUint8(o + k, s.charCodeAt(k)); };
+    txt(0,'RIFF'); v.setUint32(4, 36 + bytes, true); txt(8,'WAVE'); txt(12,'fmt ');
+    v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,canales,true);
+    v.setUint32(24,sr,true); v.setUint32(28,sr*canales*2,true); v.setUint16(32,canales*2,true); v.setUint16(34,16,true);
+    txt(36,'data'); v.setUint32(40, bytes, true);
+    const L = buf.getChannelData(0), R = buf.getChannelData(1);
+    let o = 44;
+    for (let k = 0; k < n; k++) {
+      for (const x of [L[k], R[k]]) {
+        const s = Math.max(-1, Math.min(1, x * gan));
+        v.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7FFF, true); o += 2;
+      }
+    }
+    return ab;
+  }
+  function aBase64(ab) {
+    const u = new Uint8Array(ab); let s = '';
+    for (let k = 0; k < u.length; k += 0x8000) s += String.fromCharCode.apply(null, u.subarray(k, k + 0x8000));
+    return btoa(s);
+  }
+  async function guardarArchivo(ab, nombre) {
+    const cap = window.Capacitor;
+    const FS = cap && cap.Plugins && cap.Plugins.Filesystem;
+    const Share = cap && cap.Plugins && cap.Plugins.Share;
+    const nativo = cap && cap.isNativePlatform && cap.isNativePlatform();
+    if (nativo && FS) {
+      const b64 = aBase64(ab);
+      try {   // 1) carpeta pública Documentos/Pistas
+        await FS.writeFile({ path:'Pistas/' + nombre, data:b64, directory:'DOCUMENTS', recursive:true });
+        msg('Guardado en Documentos/Pistas/' + nombre); return;
+      } catch (e) {}
+      try {   // 2) si no se puede, abre «Compartir/Guardar en…»
+        const r = await FS.writeFile({ path:nombre, data:b64, directory:'CACHE' });
+        if (Share) { await Share.share({ title:'Mezcla', url:r.uri, dialogTitle:'Guardar mezcla' }); msg('Elige dónde guardar la mezcla'); return; }
+      } catch (e) {}
+      msg('No se pudo guardar el archivo'); return;
+    }
+    // navegador
+    const url = URL.createObjectURL(new Blob([ab], { type:'audio/wav' }));
+    const a = document.createElement('a'); a.href = url; a.download = nombre;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    msg('Mezcla descargada: ' + nombre);
+  }
+
+  // ---------- pista de audio (forma de onda + cabezal) ----------
+  function ajustarCanvas() {
+    const r = window.devicePixelRatio || 1, b = cv.getBoundingClientRect();
+    cv.width = Math.max(1, Math.round(b.width * r)); cv.height = Math.max(1, Math.round(b.height * r));
+    recalcularOnda();
+  }
+  function recalcularOnda() {
+    const W = cv.width || 300; picos = new Array(W).fill(0);
+    pistas.forEach(p => {
+      if (!p.buffer || p.mute) return;
+      const d = p.buffer.getChannelData(0), paso = d.length / W;
+      for (let x = 0; x < W; x++) {
+        let m = 0; const a = Math.floor(x * paso), b = Math.min(d.length, Math.floor((x + 1) * paso));
+        for (let k = a; k < b; k += 8) { const v = Math.abs(d[k]); if (v > m) m = v; }
+        picos[x] += m;
+      }
+    });
+  }
+  function dibujar() {
+    const W = cv.width, H = cv.height, mid = H / 2, r = window.devicePixelRatio || 1;
+    g.clearRect(0, 0, W, H);
+    g.strokeStyle = '#222'; g.lineWidth = Math.max(1, r);
+    g.beginPath();
+    for (let x = 0; x < W; x += 2) {
+      const a = Math.min(1, picos[x] || 0) * (mid - 4);
+      g.moveTo(x, mid - a); g.lineTo(x, mid + a);
+    }
+    g.stroke();
+    if (!picos.some(v => v > 0)) { g.beginPath(); g.moveTo(0, mid); g.lineTo(W, mid); g.stroke(); }
+    // onda en vivo mientras se graba
+    if (grabandoIdx >= 0 && analizador) {
+      const d = new Uint8Array(analizador.fftSize); analizador.getByteTimeDomainData(d);
+      g.strokeStyle = '#ff0000'; g.lineWidth = 2 * r; g.beginPath();
+      for (let x = 0; x < W; x++) { const y = (d[Math.floor(x / W * d.length)] / 255) * H; x ? g.lineTo(x, y) : g.moveTo(x, y); }
+      g.stroke();
+    }
+    // cabezal
+    if ((reproduciendo || grabandoIdx >= 0) && masterLen) {
+      const pos = (((ctx.currentTime - t0) % masterLen) + masterLen) % masterLen / masterLen;
+      g.strokeStyle = '#f5a000'; g.lineWidth = 3 * r; g.beginPath(); g.moveTo(pos * W, 0); g.lineTo(pos * W, H); g.stroke();
+    }
+    requestAnimationFrame(dibujar);
+  }
+  window.addEventListener('resize', ajustarCanvas);
+  ajustarCanvas(); refrescar(); dibujar();
+})();
+</script>
+</body>
+</html>
