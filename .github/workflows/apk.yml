@@ -33,6 +33,11 @@ jobs:
           MANIFEST=android/app/src/main/AndroidManifest.xml
           sed -i 's#</manifest>#    <uses-permission android:name="android.permission.RECORD_AUDIO" />\n    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />\n    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />\n</manifest>#' "$MANIFEST"
 
+      - name: Firma fija (permite actualizar la app sin desinstalar)
+        run: |
+          sed -i "s#^    buildTypes {#    signingConfigs {\n        debug {\n            storeFile file('../../pistas-debug.keystore')\n            storePassword 'android'\n            keyAlias 'pistas'\n            keyPassword 'android'\n        }\n    }\n\n    buildTypes {#" android/app/build.gradle
+          grep -q "pistas-debug.keystore" android/app/build.gradle
+
       - name: Sincronizar
         run: npx cap sync android
 
