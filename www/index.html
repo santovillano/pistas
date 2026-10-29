@@ -102,7 +102,7 @@
     ctx.createMediaStreamSource(stream).connect(analizador);   // solo para dibujar la onda en vivo
   }
 
-  function lanzar(i, cuando) {
+  function lanzar(i, cuando, desfase = 0) {
     const t = pistas[i];
     if (!t.buffer) return;
     detener(i);
@@ -110,7 +110,14 @@
     f.buffer = t.buffer; f.loop = true; f.loopEnd = t.buffer.duration;
     gan.gain.value = t.mute ? 0 : 1;
     f.connect(gan).connect(ctx.destination);
-    f.start(cuando);
+    // Si por cualquier motivo el sistema corta la pista mientras el play sigue activo, se vuelve a lanzar en el mismo punto del bucle
+    f.onended = () => {
+      if (reproduciendo && t.nodo && t.nodo.f === f && masterLen) {
+        const pos = (((ctx.currentTime - t0) % masterLen) + masterLen) % masterLen;
+        lanzar(i, 0, pos);
+      }
+    };
+    f.start(cuando, desfase);
     t.nodo = { f, gan };
   }
   function detener(i) {
@@ -124,12 +131,29 @@
   function detenerTodas() { pistas.forEach((_, i) => detener(i)); }
 
   // ---------- botón play ----------
+  let bloqueo = null;   // mantiene la pantalla encendida mientras suena
+  async function mantenerEncendida(si) {
+    try {
+      if (si && navigator.wakeLock && !bloqueo) {
+        bloqueo = await navigator.wakeLock.request('screen');
+        bloqueo.addEventListener('release', () => { bloqueo = null; });
+      } else if (!si && bloqueo) { await bloqueo.release(); bloqueo = null; }
+    } catch (e) { bloqueo = null; }
+  }
+  function reanudar() {
+    if (!reproduciendo || !ctx) return;
+    if (ctx.state !== 'running') ctx.resume();
+    mantenerEncendida(true);
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) reanudar(); });
+  setInterval(reanudar, 2000);   // si el sistema pausó el audio, se reanuda solo
+
   btnPlay.addEventListener('click', () => {
     if (grabandoIdx >= 0) return;
     audioCtx();
-    if (reproduciendo) { detenerTodas(); reproduciendo = false; msg('Detenido'); }
+    if (reproduciendo) { reproduciendo = false; detenerTodas(); mantenerEncendida(false); msg('Detenido'); }
     else if (!orden.length) { msg('Aún no hay pistas grabadas'); return; }
-    else { lanzarTodas(); reproduciendo = true; msg('Reproduciendo todas las pistas'); }
+    else { lanzarTodas(); reproduciendo = true; mantenerEncendida(true); msg('Reproduciendo en bucle: pulsa ■ para detener'); }
     refrescar();
   });
 
