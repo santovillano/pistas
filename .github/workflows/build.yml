@@ -28,27 +28,27 @@ jobs:
       - name: Subir APK
         uses: actions/upload-artifact@v4
         with:
-          name: kerf-apk
+          name: decorte-apk
           path: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Publicar descarga directa
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk Kerf.apk
-          gh release create "kerf-${{ github.run_number }}" Kerf.apk \
-            --title "KERF (APK ${{ github.run_number }})" \
-            --notes "APK de KERF, optimizador de cortes, para instalar en Android." \
+          cp app/build/outputs/apk/debug/app-debug.apk Decorte.apk
+          gh release create "decorte-${{ github.run_number }}" Decorte.apk \
+            --title "Decorte (APK ${{ github.run_number }})" \
+            --notes "APK de Decorte, optimizador de cortes, para instalar en Android." \
             --latest=false
 
       - name: Dejar el APK en una rama
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir /tmp/out && cp Kerf.apk /tmp/out/ && cd /tmp/out
-          git init -q -b kerf-apk
+          mkdir /tmp/out && cp Decorte.apk /tmp/out/ && cd /tmp/out
+          git init -q -b decorte-apk
           git config user.email "actions@github.com"
           git config user.name "actions"
-          git add Kerf.apk
+          git add Decorte.apk
           git commit -q -m "APK compilado"
-          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" kerf-apk
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" decorte-apk

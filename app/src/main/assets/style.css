@@ -163,3 +163,26 @@ input{font-family:inherit;-webkit-user-select:text;user-select:text}
 .spin{width:20px;height:20px;border:2px solid var(--line2);border-top-color:var(--cyan);animation:sp .8s linear infinite}
 @keyframes sp{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.spin{animation-duration:2s}.sw::after{transition:none}#toast{transition:none}}
+
+/* ---------- pantalla de entrada ---------- */
+#splash{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:
+    linear-gradient(rgba(20,241,255,.05) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(20,241,255,.05) 1px,transparent 1px),
+    radial-gradient(700px 520px at 50% 38%,rgba(20,241,255,.16),transparent 62%),
+    radial-gradient(600px 460px at 50% 100%,rgba(255,47,208,.16),transparent 62%),
+    #05060c;
+  background-size:28px 28px,28px 28px,auto,auto,auto;transition:opacity .45s ease,visibility .45s}
+#splash.out{opacity:0;visibility:hidden;pointer-events:none}
+.sp-logo{width:min(66vw,300px);aspect-ratio:1;animation:spIn .9s cubic-bezier(.2,.8,.2,1) both}
+.sp-logo img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 0 22px rgba(20,241,255,.5)) drop-shadow(0 0 30px rgba(255,47,208,.35));animation:spGlow 2.2s ease-in-out infinite alternate}
+.sp-sub{margin-top:20px;font:400 12px var(--mono);letter-spacing:.34em;text-transform:uppercase;color:var(--cyan);text-shadow:0 0 10px rgba(20,241,255,.7);animation:spFade .8s .5s both}
+.sp-bar{margin-top:26px;width:min(54vw,230px);height:3px;background:#101830;overflow:hidden;animation:spFade .6s .6s both}
+.sp-bar i{display:block;height:100%;width:100%;transform-origin:left;background:linear-gradient(90deg,var(--cyan),var(--mag));box-shadow:0 0 12px var(--cyan);animation:spLoad 1.9s .6s cubic-bezier(.3,.1,.2,1) both}
+.sp-tap{position:absolute;left:0;right:0;bottom:calc(34px + env(safe-area-inset-bottom));text-align:center;font:400 11px var(--mono);letter-spacing:.3em;text-transform:uppercase;color:var(--dim);animation:spBlink 1.6s 1.4s ease-in-out infinite both}
+@keyframes spIn{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
+@keyframes spFade{from{opacity:0}to{opacity:1}}
+@keyframes spLoad{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@keyframes spGlow{from{filter:drop-shadow(0 0 14px rgba(20,241,255,.4)) drop-shadow(0 0 22px rgba(255,47,208,.25))}to{filter:drop-shadow(0 0 28px rgba(20,241,255,.7)) drop-shadow(0 0 38px rgba(255,47,208,.5))}}
+@keyframes spBlink{0%,100%{opacity:.25}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.sp-logo,.sp-logo img,.sp-sub,.sp-bar,.sp-bar i,.sp-tap{animation:none}#splash{transition:none}}

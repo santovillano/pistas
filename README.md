@@ -1,4 +1,4 @@
-# KERF · optimizador de cortes (Android)
+# Decorte · optimizador de cortes (Android)
 
 App para calcular cómo cortar planchas con el menor desperdicio.
 

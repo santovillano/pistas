@@ -1,8 +1,8 @@
-/* KERF · interfaz */
+/* DECORTE · interfaz */
 (function () {
   'use strict';
 
-  var KEY = 'kerf.proyectos.v1';
+  var KEY = 'kerf.proyectos.v1'; // clave histórica, se mantiene para no perder proyectos
   var MM = { mm: 1, cm: 10, m: 1000 };
   var HUES = [188, 318, 86, 38, 222, 272, 346, 160];
   var S = Packer.SCALE;
@@ -198,7 +198,7 @@
     if (!list.length) {
       body = '<div class="empty">' + ic('plan', 56) +
         '<h3>Sin proyectos</h3>' +
-        '<p>Crea un proyecto, anota las piezas que necesitas y KERF calcula cómo cortar la plancha con el menor desperdicio.</p></div>';
+        '<p>Crea un proyecto, anota las piezas que necesitas y Decorte calcula cómo cortar la plancha con el menor desperdicio.</p></div>';
     } else {
       body = list.map(function (p) {
         var r = p.result, n = countPieces(p);
@@ -213,7 +213,7 @@
       }).join('');
     }
     return '<div class="screen">' +
-      '<div class="bar"><div class="grow"><div class="brand">KER<i>F</i></div><div class="sub">optimizador de cortes</div></div><span class="ver">V1.0</span></div>' +
+      '<div class="bar"><div class="grow"><div class="brand">DE<i>CORTE</i></div><div class="sub">optimizador de cortes</div></div><span class="ver">V1.0</span></div>' +
       '<div class="content">' + body + '<div style="height:12px"></div></div>' +
       '<div class="foot"><span class="glow"><button class="btn" data-act="new">' + ic('plus', 20) + ' Nuevo proyecto</button></span></div>' +
       '</div>';
@@ -369,7 +369,7 @@
       '.kv{display:flex;flex-wrap:wrap;gap:6px 26px;margin:10px 0}.kv b{font-size:15px}' +
       '.box{height:170mm;border:0;margin-top:8px}.box svg{width:100%;height:100%}';
     var h = '<!doctype html><html><head><meta charset="utf-8"><title>' + esc(p.name) + '</title><style>' + css + '</style></head><body>';
-    h += '<div class="page"><h1>KERF · ' + esc(p.name || 'Proyecto') + '</h1><div class="muted">Plan de cortes · ' + date + '</div>';
+    h += '<div class="page"><h1>DECORTE · ' + esc(p.name || 'Proyecto') + '</h1><div class="muted">Plan de cortes · ' + date + '</div>';
     h += '<div class="kv"><div>Plancha<br><b>' + fmt(p.sheet.w) + ' × ' + fmt(p.sheet.h) + ' ' + u + '</b></div>' +
       '<div>Grosor del corte<br><b>' + fmt(p.kerf || 0) + ' ' + u + '</b></div>' +
       (p.margin > 0 ? '<div>Margen<br><b>' + fmt(p.margin) + ' ' + u + '</b></div>' : '') +
@@ -401,7 +401,7 @@
 
   function printReport(p) {
     var html = reportHTML(p);
-    var title = 'Kerf - ' + (p.name || 'Proyecto');
+    var title = 'Decorte - ' + (p.name || 'Proyecto');
     if (window.Android && window.Android.printHtml) {
       window.Android.printHtml(html, title);
     } else {
@@ -501,4 +501,18 @@
 
   load();
   render();
+
+  // pantalla de entrada: se cierra sola o al tocarla
+  (function () {
+    var sp = document.getElementById('splash');
+    if (!sp) return;
+    var gone = false;
+    function close() {
+      if (gone) return; gone = true;
+      sp.classList.add('out');
+      setTimeout(function () { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 600);
+    }
+    sp.addEventListener('click', close);
+    setTimeout(close, 2900);
+  })();
 })();
