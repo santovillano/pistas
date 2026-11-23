@@ -1,0 +1,64 @@
+name: Compilar instalador de Windows
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compilar la app
+        shell: pwsh
+        run: |
+          dotnet build Decorte.csproj -c Release -o stage 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Copy-Item app stage\app -Recurse
+          Get-ChildItem stage -Recurse | Select-Object -ExpandProperty FullName | Out-String | Tee-Object -FilePath build.log -Append
+
+      - name: Crear el instalador
+        shell: pwsh
+        run: |
+          $nsisArgs = @()
+          try {
+            Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile MicrosoftEdgeWebview2Setup.exe -UseBasicParsing
+            $nsisArgs += "/DWITHWV2"
+          } catch {
+            "No se pudo bajar WebView2: $_" | Tee-Object -FilePath build.log -Append
+          }
+          choco install nsis -y --no-progress 2>&1 | Tee-Object -FilePath build.log -Append
+          $nsisArgs += "installer.nsi"
+          & "${env:ProgramFiles(x86)}\NSIS\makensis.exe" @nsisArgs 2>&1 | Tee-Object -FilePath build.log -Append
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Publicar descarga directa
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "decorte-windows-${{ github.run_number }}" Decorte-Setup.exe \
+            --title "Decorte para Windows (${{ github.run_number }})" \
+            --notes "Instalador liviano de Decorte para Windows: ábrelo y se instala solo." \
+            --latest=false
+
+      - name: Dejar el resultado en una rama
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir out
+          cp build.log out/ || true
+          if [ -f Decorte-Setup.exe ]; then cp Decorte-Setup.exe out/; fi
+          cd out
+          git init -q -b decorte-win-exe
+          git config user.email "actions@github.com"
+          git config user.name "actions"
+          git add -A
+          git commit -q -m "Resultado de la compilacion"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" decorte-win-exe
