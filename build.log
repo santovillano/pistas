@@ -1,0 +1,69 @@
+  Determining projects to restore...
+  Restored D:\a\pistas\pistas\Decorte.csproj (in 4.54 sec).
+  Decorte -> D:\a\pistas\pistas\stage\Decorte.exe
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:08.97
+D:\a\pistas\pistas\stage\app
+D:\a\pistas\pistas\stage\runtimes
+D:\a\pistas\pistas\stage\Decorte.exe
+D:\a\pistas\pistas\stage\Decorte.exe.config
+D:\a\pistas\pistas\stage\Microsoft.Web.WebView2.Core.dll
+D:\a\pistas\pistas\stage\Microsoft.Web.WebView2.WinForms.dll
+D:\a\pistas\pistas\stage\Microsoft.Web.WebView2.Wpf.dll
+D:\a\pistas\pistas\stage\WebView2Loader.dll
+D:\a\pistas\pistas\stage\app\app.js
+D:\a\pistas\pistas\stage\app\index.html
+D:\a\pistas\pistas\stage\app\logo.png
+D:\a\pistas\pistas\stage\app\packer.js
+D:\a\pistas\pistas\stage\app\style.css
+D:\a\pistas\pistas\stage\runtimes\win-x64
+D:\a\pistas\pistas\stage\runtimes\win-x64\native
+D:\a\pistas\pistas\stage\runtimes\win-x64\native\WebView2Loader.dll
+
+Chocolatey v2.7.5
+Installing the following packages:
+nsis
+By installing, you accept licenses for the packages.
+Downloading package from source 'https://community.chocolatey.org/api/v2/'
+
+nsis.install v3.13.0 [Approved]
+nsis.install package files install completed. Performing other installation steps.
+Installing nsis.install...
+nsis.install has been installed.
+  nsis.install can be automatically uninstalled.
+ The install of nsis.install was successful.
+  Deployed to 'C:\Program Files (x86)\NSIS'
+Downloading package from source 'https://community.chocolatey.org/api/v2/'
+
+nsis v3.13.0 [Approved]
+nsis package files install completed. Performing other installation steps.
+ The install of nsis was successful.
+  Deployed to 'C:\ProgramData\chocolatey\lib\nsis'
+
+Chocolatey installed 2/2 packages. 
+ See the log for details (C:\ProgramData\chocolatey\logs\chocolatey.log).
+Command line defined: "WITHWV2"
+Processing config: C:\Program Files (x86)\NSIS\nsisconf.nsh
+Processing script file: "installer.nsi" (ACP)
+
+Processed 1 file, writing output (x86-unicode):
+
+Output: "D:\a\pistas\pistas\Decorte-Setup.exe"
+Install: 1 page (64 bytes), 1 section (2072 bytes), 117 instructions (3276 bytes), 129 strings (4412 bytes), 1 language table (230 bytes).
+Uninstall: 1 page (128 bytes), 1 section (2072 bytes), 69 instructions (1932 bytes), 92 strings (2984 bytes), 1 language table (230 bytes).
+Datablock optimizer saved 165340 bytes (~4.3%).
+
+Using lzma (compress whole) compression.
+
+EXE header size:              196096 / 38912 bytes
+Install code:                          (10518 bytes)
+Install data:                          (3289508 bytes)
+Uninstall code+data:                   (174004 bytes)
+Compressed data:             2497866 / 3474030 bytes
+CRC (0xEF246511):                  4 / 4 bytes
+
+Total size:                  2693966 / 3512946 bytes (76.6%)
